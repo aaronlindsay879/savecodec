@@ -9,5 +9,5 @@ fn main() {
 
     let raw = decode_to_raw(&save).unwrap();
     let save = Save::read(&mut raw.as_slice()).unwrap();
-    println!("{:?}", save.buildings);
+    println!("{:#?}", save);
 }

@@ -53,20 +53,25 @@ items:
   - id: playfab_season
     type: u16
   - id: season_n
-    type: Option<u16>
+    type: u16
     if: 'save_version >= 27'
+    advance_if_false: true
   - id: halloween_monsters
-    type: Option<u16>
+    type: u16
     if: 'save_version >= 24'
+    advance_if_false: true
   - id: breath_effects
-    type: Option<u16>
+    type: u16
     if: 'save_version >= 24'
+    advance_if_false: true
   - id: egg_rng_state
-    type: Option<u32>
+    type: u32
     if: 'save_version >= 15'
+    advance_if_false: true
   - id: egg_stack_size
-    type: Option<u16>
+    type: u16
     if: 'save_version >= 15'
+    advance_if_false: true
   - id: cta_faction_casts
     type: u16
   - id: alignment_pos

@@ -1,8 +1,6 @@
-use crate::{Format, Item, Repetition};
-use quote::ToTokens;
+use crate::{Condition, Format, Item, Repetition};
 use serde_yaml::{Mapping, Sequence, Value};
 use std::collections::{BTreeMap, HashMap};
-use syn::{Type, TypePath};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Endianness {
@@ -38,8 +36,8 @@ fn parse_repetition(value: &str) -> Option<Repetition> {
 /// Parse an individual item
 fn parse_item(item: &Mapping) -> Option<Item> {
     let id = syn::parse_str(item.get("id")?.as_str()?).ok()?;
-    let mut data_type = syn::parse_str(item.get("type")?.as_str()?).ok()?;
-    let condition = item
+    let data_type = syn::parse_str(item.get("type")?.as_str()?).ok()?;
+    let condition_expr = item
         .get("if")
         .and_then(Value::as_str)
         .and_then(|cond| syn::parse_str(cond).ok());
@@ -47,11 +45,15 @@ fn parse_item(item: &Mapping) -> Option<Item> {
         .get("repeat")
         .and_then(Value::as_str)
         .and_then(parse_repetition);
+    let advance_if_false = item
+        .get("advance_if_false")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
-    // if condition exists, make sure data_type is optional
-    if let Type::Path(TypePath { path, .. }) = &data_type && path.segments.first().map(|x| x.ident != "Option").unwrap_or(false) && condition.is_some() {
-        data_type = syn::parse_str(&format!("Option<{}>", &data_type.to_token_stream().to_string())).unwrap();
-    }
+    let condition = condition_expr.map(|expression| Condition {
+        expression,
+        advance_if_false,
+    });
 
     Some(Item {
         id,

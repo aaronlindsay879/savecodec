@@ -1,4 +1,4 @@
-use crate::{parse::Endianness, Format, Item, Repetition};
+use crate::{parse::Endianness, Format, Item, Repetition, Condition};
 use itertools::Itertools;
 use proc_macro2::TokenTree;
 use proc_macro_error::abort;
@@ -39,8 +39,8 @@ fn handle_simple_read(data_type: &syn::Type, endianness: Endianness) -> proc_mac
 
 /// Generates a conditional read from the arguments given.
 /// If optional is true, the read pointer will be advanced by the amount of bytes that would be otherwise read.
-fn generate_conditional_read(condition: &syn::ExprBinary, read: proc_macro2::TokenStream, data_type: &syn::Type, optional: bool) -> proc_macro2::TokenStream {
-    let else_body = if optional {
+fn generate_conditional_read(condition: &Condition, read: proc_macro2::TokenStream, data_type: &syn::Type) -> proc_macro2::TokenStream {
+    let else_body = if condition.advance_if_false {
         quote! {
             reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()]).ok();
             None
@@ -51,8 +51,9 @@ fn generate_conditional_read(condition: &syn::ExprBinary, read: proc_macro2::Tok
         }
     };
 
+    let expr = &condition.expression;
     quote! { 
-        if #condition {
+        if #expr {
             Some(#read)
         } else {
             #else_body
@@ -64,7 +65,6 @@ fn generate_conditional_read(condition: &syn::ExprBinary, read: proc_macro2::Tok
 fn generate_repeated_read(repetition: &Repetition, read: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
     match repetition {
         Repetition::Count(expr) => {
-            dbg!(read.to_string());
             quote! {
                 (0..#expr).map(|_| #read).collect::<Option<Vec<_>>>()
             }
@@ -89,7 +89,7 @@ fn generate_read_calls(items: &[Item], endianness: Endianness, struct_name: &syn
 
             // if conditional, update with required code
             if let Some(condition) = condition {
-                read = generate_conditional_read(condition, read, data_type, false);
+                read = generate_conditional_read(condition, read, data_type);
             }
             // same for repetition
             if let Some(repetition) = repetition {
@@ -113,11 +113,10 @@ fn generate_read_calls(items: &[Item], endianness: Endianness, struct_name: &syn
             let mut read = handle_simple_read(&data_type, endianness);
             // if conditional, update with required code
             if let Some(condition) = condition {
-                read = generate_conditional_read(condition, read, &data_type, true);
+                read = generate_conditional_read(condition, read, &data_type);
             }
             // same for repetition
             if let Some(repetition) = repetition {
-                dbg!(&read);
                 read = generate_repeated_read(repetition, read);
             }
 
@@ -138,13 +137,15 @@ fn generate_structs(
 ) -> proc_macro2::TokenStream {
     // extract a list of types and ids from the item slice
     // needs to be two arrays because of how quote handles iterating
-    let types = items
+    let types: Vec<_> = items
         .iter()
-        .map(|Item { data_type, repetition, .. }| if repetition.is_some() {
-            syn::parse_str(&format!("Vec<{}>", data_type.into_token_stream())).unwrap()
-        } else {
-            quote! { #data_type }
-        });
+        .map(|Item { data_type, repetition, condition, .. }| match (repetition, condition) {
+            (Some(_), _) => 
+                syn::parse_str(&format!("Vec<{}>", data_type.into_token_stream())).unwrap(),
+            (None, Some(_)) => 
+                syn::parse_str(&format!("Option<{}>", data_type.into_token_stream())).unwrap(),
+            _ => quote! { #data_type }
+        }).collect();
     let ids: Vec<_> = items.iter().map(|Item { id, .. }| quote! { #id}).collect();
 
     // then generate the list of read calls
@@ -179,14 +180,12 @@ fn generate_structs(
         }
 
         // now take the first run of simple types/ids, needed to be able to generate the context struct at the correct point
-        let simple_types = items
-            .iter()
-            .map(|Item { data_type, .. }| quote! { #data_type})
-            .take_while_ref(is_simple_type)
-            .collect::<Vec<_>>();
+        let simple_types: Vec<_> = types.iter()
+            .take_while_ref(|t| is_simple_type(t))
+            .collect();
         let simple_ids: Vec<_> = items
             .iter()
-            .map(|Item { id, .. }| quote! { #id})
+            .map(|Item { id, .. }| quote! { #id })
             .take(simple_types.len())
             .collect();
 

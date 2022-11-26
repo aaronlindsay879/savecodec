@@ -17,10 +17,16 @@ enum Repetition {
 }
 
 #[derive(Debug, Clone)]
+struct Condition {
+    expression: syn::ExprBinary,
+    advance_if_false: bool,
+}
+
+#[derive(Debug, Clone)]
 struct Item {
     id: syn::Ident,
     data_type: syn::Type,
-    condition: Option<syn::ExprBinary>,
+    condition: Option<Condition>,
     repetition: Option<Repetition>,
 }
 
