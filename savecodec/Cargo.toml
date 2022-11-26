@@ -11,6 +11,8 @@ base64 = "0.13.1"
 regex = "1.6.0"
 lazy_static = "1.4.0"
 thiserror = "1.0"
+binformat = { path = "../binformat" }
+byteorder = "1.4"
 
 [dev-dependencies]
 criterion = "0.3"

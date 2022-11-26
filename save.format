@@ -1,0 +1,88 @@
+meta:
+  endian: be
+types:
+  building:
+    - id: id
+      type: u32
+    - id: quantity
+      type: u32
+    - id: total_built
+      type: f64
+    - id: max_built
+      type: f64
+    - id: total_all_time
+      type: f64
+    - id: max_all_time
+      type: f64
+    - id: max_unique_0
+      type: f64
+      if: '_root.save_version >= 53'
+    - id: max_unique_1
+      type: f64
+      if: '_root.save_version >= 53'
+    - id: max_unique_2
+      type: f64
+      if: '_root.save_version >= 53'
+    - id: max_unique_0_all_time
+      type: f64
+      if: '_root.save_version >= 53'
+    - id: max_unique_1_all_time
+      type: f64
+      if: '_root.save_version >= 53'
+    - id: max_unique_2_all_time
+      type: f64
+      if: '_root.save_version >= 53'
+  upgrade:
+    - id: id
+      type: u32
+    - id: u1
+      type: bool
+    - id: u2
+      type: bool
+      if: '_root.save_version >= 1'
+    - id: u3
+      type: bool
+      if: '_root.save_version >= 18'
+    - id: rng_state
+      type: u32
+items:
+  - id: save_version
+    type: u16
+  - id: new_field32
+    type: u16
+  - id: playfab_season
+    type: u16
+  - id: season_n
+    type: Option<u16>
+    if: 'save_version >= 27'
+  - id: halloween_monsters
+    type: Option<u16>
+    if: 'save_version >= 24'
+  - id: breath_effects
+    type: Option<u16>
+    if: 'save_version >= 24'
+  - id: egg_rng_state
+    type: Option<u32>
+    if: 'save_version >= 15'
+  - id: egg_stack_size
+    type: Option<u16>
+    if: 'save_version >= 15'
+  - id: cta_faction_casts
+    type: u16
+  - id: alignment_pos
+    type: u32
+  - id: options_pos
+    type: u32
+  - id: num_buildings
+    type: u16
+  - id: buildings
+    type: building
+    repeat: expr
+    repeat-expr: num_buildings
+  - id: num_upgrades
+    type: u16
+  - id: upgrades
+    type: upgrade
+    repeat: expr
+    repeat-expr: num_upgrades
+  

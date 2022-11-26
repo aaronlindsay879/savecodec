@@ -1,8 +1,8 @@
-use std::io::Read;
-
+use binformat::format_source;
 use flate2::read::ZlibDecoder;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::io::Read;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -50,6 +50,5 @@ pub fn decode_to_raw(save: &str) -> Result<Vec<u8>, DecodeError> {
     out.iter_mut()
         .zip(CIPHER_KEY.iter().cycle())
         .for_each(|(byte, key)| *byte ^= key);
-
     Ok(out)
 }
