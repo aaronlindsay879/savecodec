@@ -1,4 +1,4 @@
-use crate::{parse::Endianness, Format, Item};
+use crate::{parse::Endianness, Format, Item, Repetition};
 use itertools::Itertools;
 use proc_macro2::TokenTree;
 use proc_macro_error::abort;
@@ -21,19 +21,54 @@ fn handle_simple_read(data_type: &syn::Type, endianness: Endianness) -> proc_mac
 
         match endianness {
             Endianness::Little => {
-                quote! {  reader.#fn_call::<::byteorder::LittleEndian>().ok()? }
+                quote! {  reader.#fn_call::<::byteorder::LittleEndian>().ok() }
             }
             Endianness::Big => {
-                quote! { reader.#fn_call::<::byteorder::BigEndian>().ok()? }
+                quote! { reader.#fn_call::<::byteorder::BigEndian>().ok() }
             }
         }
     } else if data_type.to_token_stream().to_string() == "bool" {
-        quote! { reader.read_u8().ok()? != 0 }
+        quote! { reader.read_u8().map(|i| i != 0).ok() }
     } else {
         // more complex case where needs to use custom implementation
         // e.g. <type>::read(&reader);
 
-        quote! { #data_type::read(reader, &_root)? }
+        quote! { #data_type::read(reader, &_root) }
+    }
+}
+
+/// Generates a conditional read from the arguments given.
+/// If optional is true, the read pointer will be advanced by the amount of bytes that would be otherwise read.
+fn generate_conditional_read(condition: &syn::ExprBinary, read: proc_macro2::TokenStream, data_type: &syn::Type, optional: bool) -> proc_macro2::TokenStream {
+    let else_body = if optional {
+        quote! {
+            reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()]).ok();
+            None
+        }
+    } else {
+        quote! {
+            None
+        }
+    };
+
+    quote! { 
+        if #condition {
+            Some(#read)
+        } else {
+            #else_body
+        }
+    }
+}
+
+/// Generates a repeated read from the arguments given.
+fn generate_repeated_read(repetition: &Repetition, read: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    match repetition {
+        Repetition::Count(expr) => {
+            dbg!(read.to_string());
+            quote! {
+                (0..#expr).map(|_| #read).collect::<Option<Vec<_>>>()
+            }
+        },
     }
 }
 
@@ -44,51 +79,51 @@ fn generate_read_calls(items: &[Item], endianness: Endianness, struct_name: &syn
             id,
             data_type,
             condition,
+            repetition
         } = item;
 
-        if let Type::Path(TypePath { path, .. }) = data_type && path.segments.first().map(|x| x.arguments.is_empty()).unwrap_or(false) {
+        if let Type::Path(TypePath { path, .. }) = data_type && path.segments.first().map(|x| x.ident != "Option").unwrap_or(true) {
             // simplest case, no option
             // generate the applicable read code
-            let read = handle_simple_read(data_type, endianness);
+            let mut read = handle_simple_read(data_type, endianness);
 
-            // if condition exists, make sure to use it
-            // otherwise just assign to a variable
+            // if conditional, update with required code
             if let Some(condition) = condition {
-                quote! { 
-                    let #id = if #condition {
-                        Some(#read)
-                    } else {
-                        None
-                    }
-                }
-            } else {
-                quote! { let #id = #read }
+                read = generate_conditional_read(condition, read, data_type, false);
             }
-        } else if let Type::Path(TypePath { path, .. }) = data_type && path.segments.first().map(|x| x.ident == "Option").unwrap_or(false) {
+            // same for repetition
+            if let Some(repetition) = repetition {
+                read = generate_repeated_read(repetition, read);
+            }
+
+            quote! { let #id = #read? }
+        } else if let Type::Path(TypePath { path, .. }) = data_type {
             // now handle options
             // first need to get actual type
-            let data_type = path.segments.first().and_then(|x| x.arguments.to_token_stream().into_iter().find_map(|x| 
+            let data_type = syn::parse_str(
+                &path.segments.first().and_then(|x| x.arguments.to_token_stream().into_iter().find_map(|x| 
                 if let TokenTree::Ident(ident) = x {
                      Some(ident)
                 } else {
                      None
-                })).unwrap();
+                })).unwrap().to_string()
+            ).unwrap();
             
             // generate read code for the underlying type
-            let read = handle_simple_read(&syn::parse_str(&data_type.to_string()).unwrap(), endianness);
-
-            // if condition is true, just read
-            // otherwise need to advance reader by the correct amount of bytes
-            quote! { 
-                let #id = if #condition {
-                    Some(#read)
-                } else {
-                    reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()]).expect("failed to read empty option");
-                    None
-                };
+            let mut read = handle_simple_read(&data_type, endianness);
+            // if conditional, update with required code
+            if let Some(condition) = condition {
+                read = generate_conditional_read(condition, read, &data_type, true);
             }
+            // same for repetition
+            if let Some(repetition) = repetition {
+                dbg!(&read);
+                read = generate_repeated_read(repetition, read);
+            }
+
+            quote! { let #id = #read? }
         } else {
-            abort!(struct_name, "can only handle T or Option<T>")
+            abort!(struct_name, "can only handle T, Vec<T> or Option<T>")
         }
     }).collect()
 }
@@ -105,7 +140,11 @@ fn generate_structs(
     // needs to be two arrays because of how quote handles iterating
     let types = items
         .iter()
-        .map(|Item { data_type, .. }| quote! { #data_type});
+        .map(|Item { data_type, repetition, .. }| if repetition.is_some() {
+            syn::parse_str(&format!("Vec<{}>", data_type.into_token_stream())).unwrap()
+        } else {
+            quote! { #data_type }
+        });
     let ids: Vec<_> = items.iter().map(|Item { id, .. }| quote! { #id}).collect();
 
     // then generate the list of read calls

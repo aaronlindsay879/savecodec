@@ -1,4 +1,4 @@
-use crate::{Format, Item};
+use crate::{Format, Item, Repetition};
 use quote::ToTokens;
 use serde_yaml::{Mapping, Sequence, Value};
 use std::collections::{BTreeMap, HashMap};
@@ -23,6 +23,18 @@ fn parse_meta(meta: &Value) -> Endianness {
     }
 }
 
+fn parse_repetition(value: &str) -> Option<Repetition> {
+    let mut chars = value.chars();
+
+    let discriminant = chars.by_ref().take_while(|&c| c != '(').collect::<String>();
+    let expression = chars.by_ref().take_while(|&c| c != ')').collect::<String>();
+
+    match &discriminant[..] {
+        "Count" => Some(Repetition::Count(syn::parse_str(&expression).ok()?)),
+        _ => None,
+    }
+}
+
 /// Parse an individual item
 fn parse_item(item: &Mapping) -> Option<Item> {
     let id = syn::parse_str(item.get("id")?.as_str()?).ok()?;
@@ -31,9 +43,13 @@ fn parse_item(item: &Mapping) -> Option<Item> {
         .get("if")
         .and_then(Value::as_str)
         .and_then(|cond| syn::parse_str(cond).ok());
+    let repetition = item
+        .get("repeat")
+        .and_then(Value::as_str)
+        .and_then(parse_repetition);
 
     // if condition exists, make sure data_type is optional
-    if  let Type::Path(TypePath { path, .. }) = &data_type && path.segments.first().map(|x| x.ident != "Option").unwrap_or(false) && condition.is_some() {
+    if let Type::Path(TypePath { path, .. }) = &data_type && path.segments.first().map(|x| x.ident != "Option").unwrap_or(false) && condition.is_some() {
         data_type = syn::parse_str(&format!("Option<{}>", &data_type.to_token_stream().to_string())).unwrap();
     }
 
@@ -41,6 +57,7 @@ fn parse_item(item: &Mapping) -> Option<Item> {
         id,
         data_type,
         condition,
+        repetition,
     })
 }
 

@@ -77,12 +77,10 @@ items:
     type: u16
   - id: buildings
     type: building
-    repeat: expr
-    repeat-expr: num_buildings
+    repeat: Count(num_buildings)
   - id: num_upgrades
     type: u16
   - id: upgrades
     type: upgrade
-    repeat: expr
-    repeat-expr: num_upgrades
+    repeat: Count(num_upgrades)
   

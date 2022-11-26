@@ -8,5 +8,6 @@ fn main() {
     let save = std::fs::read_to_string("save.txt").unwrap();
 
     let raw = decode_to_raw(&save).unwrap();
-    println!("{:#?}", Save::read(&mut raw.as_slice()));
+    let save = Save::read(&mut raw.as_slice()).unwrap();
+    println!("{:?}", save.buildings);
 }

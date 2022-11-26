@@ -12,10 +12,16 @@ use std::collections::{BTreeMap, HashMap};
 use syn::{parse_macro_input, AttributeArgs, ItemStruct, Lit};
 
 #[derive(Debug, Clone)]
+enum Repetition {
+    Count(syn::Expr),
+}
+
+#[derive(Debug, Clone)]
 struct Item {
     id: syn::Ident,
     data_type: syn::Type,
     condition: Option<syn::ExprBinary>,
+    repetition: Option<Repetition>,
 }
 
 #[derive(Debug)]

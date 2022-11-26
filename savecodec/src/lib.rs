@@ -1,4 +1,3 @@
-use binformat::format_source;
 use flate2::read::ZlibDecoder;
 use lazy_static::lazy_static;
 use regex::Regex;
