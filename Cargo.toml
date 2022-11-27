@@ -3,3 +3,6 @@ members = [
     "savecodec",
     "binformat"
 ]
+
+[profile.release]
+lto = "fat"

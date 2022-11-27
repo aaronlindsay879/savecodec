@@ -50,11 +50,11 @@ pub(super) fn generate_conditional_read(
     let else_body = if condition.advance_if_false {
         quote! {
             reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()]).ok()?;
-            None
+            Some(None)
         }
     } else {
         quote! {
-            None
+            Some(None)
         }
     };
 
