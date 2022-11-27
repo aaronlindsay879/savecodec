@@ -139,9 +139,94 @@ fn generate_read_calls(
         .collect()
 }
 
-/// Generate the final structs with read implementations.
-fn generate_structs(
-    is_root: bool,
+/// Generates the root struct and assosciated context
+fn generate_root_struct(
+    struct_name: &syn::Ident,
+    types: Vec<proc_macro2::TokenStream>,
+    ids: Vec<proc_macro2::TokenStream>,
+    read_calls: Vec<proc_macro2::TokenStream>,
+) -> proc_macro2::TokenStream {
+    // if is root, construct a struct context with all simple types before first complex type
+    let context_name = format_ident!("{}Context", struct_name);
+
+    /// Helper function to figure out if a type is "simple" - not a composite type
+    fn is_simple_type(data_type: &proc_macro2::TokenStream) -> bool {
+        // check if list of rust types contains it
+        RUST_TYPES.contains(&data_type.to_string().as_str())
+    }
+
+    // now take the first run of simple types/ids, needed to be able to generate the context struct at the correct point
+    let simple_types: Vec<_> = types.iter().take_while_ref(|t| is_simple_type(t)).collect();
+    let simple_ids: Vec<_> = ids.iter().take(simple_types.len()).collect();
+
+    // then split the read calls at the same point so context struct can be inserted in the middle
+    let initial_read_calls = read_calls.iter().take(simple_types.len());
+    let rest_read_calls = read_calls.iter().skip(simple_types.len());
+
+    quote! {
+        struct #context_name {
+            #(pub #simple_ids: #simple_types),*
+        }
+
+        #[derive(Debug)]
+        struct #struct_name {
+            #(#ids: #types),*
+        }
+
+        impl #struct_name {
+            pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
+                #(
+                    #initial_read_calls;
+                )*
+
+                let _root = #context_name {
+                    #(#simple_ids),*
+                };
+
+                #(
+                    #rest_read_calls;
+                )*
+
+                Some(Self {
+                    #(#ids),*
+                })
+            }
+        }
+    }
+}
+
+/// Generates a composite struct for user defined types
+fn generate_composite_struct(
+    struct_name: &syn::Ident,
+    root_name: &syn::Ident,
+    types: Vec<proc_macro2::TokenStream>,
+    ids: Vec<proc_macro2::TokenStream>,
+    read_calls: Vec<proc_macro2::TokenStream>,
+) -> proc_macro2::TokenStream {
+    let context_name = format_ident!("{}Context", root_name);
+
+    quote! {
+        #[derive(Debug)]
+        struct #struct_name {
+            #(#ids: #types),*
+        }
+
+        impl #struct_name {
+            pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R, _root: &#context_name) -> Option<Self> {
+                #(
+                    #read_calls;
+                )*
+
+                Some(Self {
+                    #(#ids),*
+                })
+            }
+        }
+    }
+}
+
+/// Generate a struct with given information with read implementation, correctly handling the root case.
+fn generate_struct(
     root_name: &syn::Ident,
     struct_name: &syn::Ident,
     endianness: Endianness,
@@ -173,77 +258,11 @@ fn generate_structs(
     // then generate the list of read calls
     let read_calls = generate_read_calls(items, endianness, struct_name);
 
-    // if is root, construct a struct context with all simple types before first complex type
-    let context_name = format_ident!("{}Context", root_name);
-
-    if is_root {
-        /// Helper function to figure out if a type is "simple" - not a composite type
-        fn is_simple_type(data_type: &proc_macro2::TokenStream) -> bool {
-            // check if list of rust types contains it
-            RUST_TYPES.contains(&data_type.to_string().as_str())
-        }
-
-        // now take the first run of simple types/ids, needed to be able to generate the context struct at the correct point
-        let simple_types: Vec<_> = types.iter().take_while_ref(|t| is_simple_type(t)).collect();
-        let simple_ids: Vec<_> = items
-            .iter()
-            .map(|Item { id, .. }| quote! { #id })
-            .take(simple_types.len())
-            .collect();
-
-        // then split the read calls at the same point so context struct can be inserted in the middle
-        let initial_read_calls = read_calls.iter().take(simple_types.len());
-        let rest_read_calls = read_calls.iter().skip(simple_types.len());
-
-        quote! {
-            struct #context_name {
-                #(pub #simple_ids: #simple_types),*
-            }
-
-            #[derive(Debug)]
-            struct #struct_name {
-                #(#ids: #types),*
-            }
-
-            impl #struct_name {
-                pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
-                    #(
-                        #initial_read_calls;
-                    )*
-
-                    let _root = #context_name {
-                        #(#simple_ids),*
-                    };
-
-                    #(
-                        #rest_read_calls;
-                    )*
-
-                    Some(Self {
-                        #(#ids),*
-                    })
-                }
-            }
-        }
+    // simple check for root struct
+    if struct_name == root_name {
+        generate_root_struct(struct_name, types, ids, read_calls)
     } else {
-        quote! {
-            #[derive(Debug)]
-            struct #struct_name {
-                #(#ids: #types),*
-            }
-
-            impl #struct_name {
-                pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R, _root: &#context_name) -> Option<Self> {
-                    #(
-                        #read_calls;
-                    )*
-
-                    Some(Self {
-                        #(#ids),*
-                    })
-                }
-            }
-        }
+        generate_composite_struct(struct_name, root_name, types, ids, read_calls)
     }
 }
 
@@ -252,15 +271,9 @@ pub(super) fn generate(struct_name: syn::Ident, format: Format) -> proc_macro::T
     let types = format
         .types
         .iter()
-        .map(|items| generate_structs(false, &struct_name, items.0, format.endianness, items.1));
+        .map(|items| generate_struct(&struct_name, items.0, format.endianness, items.1));
 
-    let main = generate_structs(
-        true,
-        &struct_name,
-        &struct_name,
-        format.endianness,
-        &format.items,
-    );
+    let main = generate_struct(&struct_name, &struct_name, format.endianness, &format.items);
 
     quote! {
         #(#types)*

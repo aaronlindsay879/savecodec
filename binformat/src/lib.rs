@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![warn(clippy::cognitive_complexity)]
 
 mod generate;
 mod parse;
