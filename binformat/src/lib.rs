@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 #![warn(clippy::cognitive_complexity)]
 
-mod generate;
+mod generation;
 mod parse;
 
 use crate::parse::parse_file;
@@ -63,5 +63,5 @@ pub fn format_source(attr: TokenStream, item: TokenStream) -> TokenStream {
     let format = parse_file(file)
         .unwrap_or_else(|| abort!(item.attrs.first(), "File provided is not a valid format."));
 
-    generate::generate(struct_name, format)
+    generation::generate(struct_name, format)
 }
