@@ -2,7 +2,7 @@ use crate::{Condition, Format, Item, Repetition};
 use serde_yaml::{Mapping, Sequence, Value};
 use std::collections::{BTreeMap, HashMap};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) enum Endianness {
     Little,
     Big,
@@ -98,61 +98,40 @@ pub(super) fn parse_file(items: BTreeMap<String, Value>) -> Option<Format> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_yaml::Mapping;
+    use serde_yaml::{Mapping, Value};
 
     #[test]
     fn parse_meta_test() {
-        assert_eq!(parse_meta(&BTreeMap::new()), Endianness::Little);
+        assert_eq!(parse_meta(&Value::Null), Endianness::Little);
 
-        let le_map = {
-            let le_value = {
-                let mut le_value = Mapping::new();
-                le_value.insert(
-                    Value::String("endian".to_owned()),
-                    Value::String("le".to_owned()),
-                );
-                le_value
-            };
-
-            let mut le_map = BTreeMap::new();
-            le_map.insert("meta".to_owned(), Value::Mapping(le_value));
-
-            le_map
+        let le_value = {
+            let mut le_value = Mapping::new();
+            le_value.insert(
+                Value::String("endian".to_owned()),
+                Value::String("le".to_owned()),
+            );
+            Value::Mapping(le_value)
         };
-        assert_eq!(parse_meta(&le_map), Endianness::Little);
+        assert_eq!(parse_meta(&le_value), Endianness::Little);
 
-        let be_map = {
-            let be_value = {
-                let mut be_value = Mapping::new();
-                be_value.insert(
-                    Value::String("endian".to_owned()),
-                    Value::String("be".to_owned()),
-                );
-                be_value
-            };
-
-            let mut be_map = BTreeMap::new();
-            be_map.insert("meta".to_owned(), Value::Mapping(be_value));
-
-            be_map
+        let be_value = {
+            let mut be_value = Mapping::new();
+            be_value.insert(
+                Value::String("endian".to_owned()),
+                Value::String("be".to_owned()),
+            );
+            Value::Mapping(be_value)
         };
-        assert_eq!(parse_meta(&be_map), Endianness::Big);
+        assert_eq!(parse_meta(&be_value), Endianness::Big);
 
-        let other_map = {
-            let other_value = {
-                let mut other_value = Mapping::new();
-                other_value.insert(
-                    Value::String("endian".to_owned()),
-                    Value::String("other".to_owned()),
-                );
-                other_value
-            };
-
-            let mut other_map = BTreeMap::new();
-            other_map.insert("meta".to_owned(), Value::Mapping(other_value));
-
-            other_map
+        let other_value = {
+            let mut other_value = Mapping::new();
+            other_value.insert(
+                Value::String("endian".to_owned()),
+                Value::String("other".to_owned()),
+            );
+            Value::Mapping(other_value)
         };
-        assert_eq!(parse_meta(&other_map), Endianness::Little);
+        assert_eq!(parse_meta(&other_value), Endianness::Little);
     }
 }
