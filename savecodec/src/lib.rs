@@ -38,7 +38,7 @@ pub fn decode_to_raw(save: &str) -> Result<Vec<u8>, DecodeError> {
         .ok_or(DecodeError::InvalidSaveString)?[2];
     let data = base64::decode(data).or(Err(DecodeError::InvalidBase64))?;
 
-    // then deflate with zlib
+    // then inflate with zlib
     let mut decoder = ZlibDecoder::new(&data[..]);
     let mut out = Vec::new();
     decoder

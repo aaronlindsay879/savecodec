@@ -1,6 +1,5 @@
-use crate::{parse::Endianness, Format, Item, Repetition, Condition};
+use crate::{parse::Endianness, Condition, Format, Item, Repetition};
 use itertools::Itertools;
-use proc_macro2::TokenTree;
 use proc_macro_error::abort;
 use quote::{format_ident, quote, ToTokens};
 use syn::{Type, TypePath};
@@ -17,6 +16,7 @@ fn handle_simple_read(data_type: &syn::Type, endianness: Endianness) -> proc_mac
     // need to check if type is existing rust type or custom
     if RUST_TYPES.contains(&data_type.to_token_stream().to_string().as_str()) {
         // simple case where reader code exists, can just reader::read_<type>();
+
         let fn_call = format_ident!("read_{}", data_type.to_token_stream().to_string());
 
         match endianness {
@@ -28,18 +28,25 @@ fn handle_simple_read(data_type: &syn::Type, endianness: Endianness) -> proc_mac
             }
         }
     } else if data_type.to_token_stream().to_string() == "bool" {
+        // matches boolean logic in original savecodec2
+
         quote! { reader.read_u8().map(|i| i != 0).ok() }
     } else {
         // more complex case where needs to use custom implementation
-        // e.g. <type>::read(&reader);
+        // pass root context for conditional support
+        // e.g. <type>::read(&reader, &_root);
 
         quote! { #data_type::read(reader, &_root) }
     }
 }
 
 /// Generates a conditional read from the arguments given.
-/// If optional is true, the read pointer will be advanced by the amount of bytes that would be otherwise read.
-fn generate_conditional_read(condition: &Condition, read: proc_macro2::TokenStream, data_type: &syn::Type) -> proc_macro2::TokenStream {
+fn generate_conditional_read(
+    condition: &Condition,
+    read: proc_macro2::TokenStream,
+    data_type: &syn::Type,
+) -> proc_macro2::TokenStream {
+    // make sure to advance read pointer if needed
     let else_body = if condition.advance_if_false {
         quote! {
             reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()]).ok();
@@ -52,7 +59,7 @@ fn generate_conditional_read(condition: &Condition, read: proc_macro2::TokenStre
     };
 
     let expr = &condition.expression;
-    quote! { 
+    quote! {
         if #expr {
             Some(#read)
         } else {
@@ -62,69 +69,74 @@ fn generate_conditional_read(condition: &Condition, read: proc_macro2::TokenStre
 }
 
 /// Generates a repeated read from the arguments given.
-fn generate_repeated_read(repetition: &Repetition, read: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+fn generate_repeated_read(
+    repetition: &Repetition,
+    read: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
     match repetition {
         Repetition::Count(expr) => {
             quote! {
                 (0..#expr).map(|_| #read).collect::<Option<Vec<_>>>()
             }
-        },
+        }
     }
 }
 
+/// Creates a final read statement with all required conditional and repetition code
+fn create_read(
+    data_type: &syn::Type,
+    endianness: Endianness,
+    condition: &Option<Condition>,
+    repetition: &Option<Repetition>,
+) -> proc_macro2::TokenStream {
+    let mut original = handle_simple_read(data_type, endianness);
+
+    // if conditional, update with required code
+    if let Some(condition) = condition {
+        original = generate_conditional_read(condition, original, data_type);
+    }
+    // same for repetition
+    if let Some(repetition) = repetition {
+        original = generate_repeated_read(repetition, original);
+    }
+
+    original
+}
+
 /// Generates a vector of variable assignments that read the correct type from a reader.
-fn generate_read_calls(items: &[Item], endianness: Endianness, struct_name: &syn::Ident) -> Vec<proc_macro2::TokenStream> {
-    items.iter().map(|item| {
-        let Item {
-            id,
-            data_type,
-            condition,
-            repetition
-        } = item;
+fn generate_read_calls(
+    items: &[Item],
+    endianness: Endianness,
+    struct_name: &syn::Ident,
+) -> Vec<proc_macro2::TokenStream> {
+    /// Checks if type contains any symbols which indicate if it's a complex type (like `Option<T>`)
+    #[inline(always)]
+    fn is_simple_type(path: &syn::Path) -> bool {
+        path.segments
+            .first()
+            .map(|x| !x.ident.to_string().contains("<>"))
+            .unwrap_or(false)
+    }
 
-        if let Type::Path(TypePath { path, .. }) = data_type && path.segments.first().map(|x| x.ident != "Option").unwrap_or(true) {
-            // simplest case, no option
-            // generate the applicable read code
-            let mut read = handle_simple_read(data_type, endianness);
+    items
+        .iter()
+        .map(|item| {
+            let Item {
+                id,
+                data_type,
+                condition,
+                repetition,
+            } = item;
 
-            // if conditional, update with required code
-            if let Some(condition) = condition {
-                read = generate_conditional_read(condition, read, data_type);
-            }
-            // same for repetition
-            if let Some(repetition) = repetition {
-                read = generate_repeated_read(repetition, read);
-            }
+            if let Type::Path(TypePath { path, .. }) = data_type && is_simple_type(path) {
+                let read = create_read(data_type, endianness, condition, repetition);
 
-            quote! { let #id = #read? }
-        } else if let Type::Path(TypePath { path, .. }) = data_type {
-            // now handle options
-            // first need to get actual type
-            let data_type = syn::parse_str(
-                &path.segments.first().and_then(|x| x.arguments.to_token_stream().into_iter().find_map(|x| 
-                if let TokenTree::Ident(ident) = x {
-                     Some(ident)
-                } else {
-                     None
-                })).unwrap().to_string()
-            ).unwrap();
-            
-            // generate read code for the underlying type
-            let mut read = handle_simple_read(&data_type, endianness);
-            // if conditional, update with required code
-            if let Some(condition) = condition {
-                read = generate_conditional_read(condition, read, &data_type);
+                quote! { let #id = #read? }
+            } else {
+                abort!(struct_name, "can only handle simple types (try removing any Options or Results in config file)")
             }
-            // same for repetition
-            if let Some(repetition) = repetition {
-                read = generate_repeated_read(repetition, read);
-            }
-
-            quote! { let #id = #read? }
-        } else {
-            abort!(struct_name, "can only handle T, Vec<T> or Option<T>")
-        }
-    }).collect()
+        })
+        .collect()
 }
 
 /// Generate the final structs with read implementations.
@@ -139,13 +151,23 @@ fn generate_structs(
     // needs to be two arrays because of how quote handles iterating
     let types: Vec<_> = items
         .iter()
-        .map(|Item { data_type, repetition, condition, .. }| match (repetition, condition) {
-            (Some(_), _) => 
-                syn::parse_str(&format!("Vec<{}>", data_type.into_token_stream())).unwrap(),
-            (None, Some(_)) => 
-                syn::parse_str(&format!("Option<{}>", data_type.into_token_stream())).unwrap(),
-            _ => quote! { #data_type }
-        }).collect();
+        .map(
+            |Item {
+                 data_type,
+                 repetition,
+                 condition,
+                 ..
+             }| match (repetition, condition) {
+                (Some(_), _) => {
+                    syn::parse_str(&format!("Vec<{}>", data_type.into_token_stream())).unwrap()
+                }
+                (None, Some(_)) => {
+                    syn::parse_str(&format!("Option<{}>", data_type.into_token_stream())).unwrap()
+                }
+                _ => quote! { #data_type },
+            },
+        )
+        .collect();
     let ids: Vec<_> = items.iter().map(|Item { id, .. }| quote! { #id}).collect();
 
     // then generate the list of read calls
@@ -157,32 +179,12 @@ fn generate_structs(
     if is_root {
         /// Helper function to figure out if a type is "simple" - not a composite type
         fn is_simple_type(data_type: &proc_macro2::TokenStream) -> bool {
-            if data_type.to_string().starts_with("Option") {
-                // if its an option, check that the first identity (ignoring the "Option" itself) is a simple type
-                is_simple_type(&data_type
-                        .clone()
-                        .into_iter()
-                        .skip(1)
-                        .find_map(|x| {
-                            if let TokenTree::Ident(ident) = x {
-                                Some(ident)
-                            } else {
-                                None
-                            }
-                        })
-                        .unwrap()
-                        .into_token_stream()
-                )
-            } else {
-                // otherwise check if list of rust types contains it
-                RUST_TYPES.contains(&data_type.to_string().as_str())
-            }
+            // check if list of rust types contains it
+            RUST_TYPES.contains(&data_type.to_string().as_str())
         }
 
         // now take the first run of simple types/ids, needed to be able to generate the context struct at the correct point
-        let simple_types: Vec<_> = types.iter()
-            .take_while_ref(|t| is_simple_type(t))
-            .collect();
+        let simple_types: Vec<_> = types.iter().take_while_ref(|t| is_simple_type(t)).collect();
         let simple_ids: Vec<_> = items
             .iter()
             .map(|Item { id, .. }| quote! { #id })
