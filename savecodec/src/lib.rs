@@ -1,4 +1,10 @@
-use flate2::read::ZlibDecoder;
+#![feature(const_for)]
+#![allow(overflowing_literals)]
+
+use flate2::{
+    read::{ZlibDecoder, ZlibEncoder},
+    Compression,
+};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::io::Read;
@@ -10,9 +16,12 @@ pub enum SaveError {
     InvalidSaveString,
     #[error("save data not valid base64")]
     InvalidBase64,
-    #[error("save data inflation error")]
-    InflateError(#[from] std::io::Error),
+    #[error("save data compression error")]
+    CompressError(#[from] std::io::Error),
 }
+
+/// Key for the vigenere cipher
+const CIPHER_KEY: &[u8] = b"therealmisalie";
 
 /// Decodes a save into raw binary data which can then be parsed.
 ///
@@ -29,8 +38,6 @@ pub fn decode_to_raw(save: &str) -> Result<Vec<u8>, SaveError> {
         /// Regex to extract save version (first group) and save data (second group) from the string
         static ref SAVE_REGEX: Regex = Regex::new(r"^\$([0-9]{2})s(.*)\$e$").unwrap();
     }
-    /// Key for the vigenere cipher
-    const CIPHER_KEY: &[u8] = b"therealmisalie";
 
     // extract save data from save string, and then decode to byte array
     let data = &SAVE_REGEX
@@ -43,11 +50,40 @@ pub fn decode_to_raw(save: &str) -> Result<Vec<u8>, SaveError> {
     let mut out = Vec::new();
     decoder
         .read_to_end(&mut out)
-        .map_err(SaveError::InflateError)?;
+        .map_err(SaveError::CompressError)?;
 
     // finally apply vigenere cipher with known key to get the raw save data in a usable form
     out.iter_mut()
         .zip(CIPHER_KEY.iter().cycle())
         .for_each(|(byte, key)| *byte ^= key);
     Ok(out)
+}
+
+/// Encodes raw binary data into an RG save
+///
+/// # Example
+/// ```
+/// # use savecodec::encode_from_raw;
+/// assert_eq!(encode_from_raw(&[7, 29, 22], 0).unwrap(), "$00seJwrLi0GAAK5AVw=$e");
+/// ```
+pub fn encode_from_raw(data: &[u8], version: u16) -> Result<String, SaveError> {
+    // encrypt with vigenere cipher first
+    let data: Vec<u8> = data
+        .iter()
+        .zip(CIPHER_KEY.iter().cycle())
+        .map(|(byte, key)| byte ^ key)
+        .collect();
+
+    // then deflate with zlib
+    let mut encoder = ZlibEncoder::new(&data[..], Compression::new(6));
+    let mut out = Vec::new();
+    encoder
+        .read_to_end(&mut out)
+        .map_err(SaveError::CompressError)?;
+
+    // then base64 encoding
+    let data = base64::encode(out);
+
+    // and finally put in format save expects
+    Ok(format!("${version:02}s{data}$e"))
 }
