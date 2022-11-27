@@ -17,7 +17,7 @@ impl Save {
         let checksum = crc32fast::hash(&raw).to_be_bytes();
         raw.extend_from_slice(&checksum);
 
-        savecodec::encode_from_raw(&raw, 0).ok()
+        savecodec::encode_from_raw(&raw, self.save_version).ok()
     }
 }
 
@@ -25,5 +25,8 @@ fn main() {
     let save_string = std::fs::read_to_string("save.txt").unwrap();
 
     let save_decoded = Save::from_str(&save_string).unwrap();
-    println!("{:?}", save_decoded.to_str());
+    let new_str = save_decoded.to_str().unwrap();
+    let new_decoded = Save::from_str(&new_str).unwrap();
+
+    println!("{}", save_decoded == new_decoded);
 }
