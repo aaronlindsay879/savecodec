@@ -33,13 +33,13 @@ fn generate_root_struct(
     let rest_read_calls = read_calls.iter().skip(simple_types.len());
 
     quote! {
-        struct #context_name {
+        #visibility struct #context_name {
             #(pub #simple_ids: #simple_types),*
         }
 
         #[derive(Debug, PartialEq)]
         #visibility struct #struct_name {
-            #(#ids: #types),*
+            #(pub #ids: #types),*
         }
 
         impl #struct_name {
@@ -76,6 +76,7 @@ fn generate_root_struct(
 fn generate_composite_struct(
     struct_name: &syn::Ident,
     root_name: &syn::Ident,
+    visibility: &syn::Visibility,
     types: Vec<proc_macro2::TokenStream>,
     ids: Vec<proc_macro2::TokenStream>,
     read_calls: Vec<proc_macro2::TokenStream>,
@@ -85,8 +86,8 @@ fn generate_composite_struct(
 
     quote! {
         #[derive(Debug, PartialEq)]
-        struct #struct_name {
-            #(#ids: #types),*
+        #visibility struct #struct_name {
+            #(pub #ids: #types),*
         }
 
         impl #struct_name {
@@ -151,6 +152,14 @@ pub(super) fn generate_struct(
     if struct_name == root_name {
         generate_root_struct(root, types, ids, read_calls, write_calls)
     } else {
-        generate_composite_struct(struct_name, root_name, types, ids, read_calls, write_calls)
+        generate_composite_struct(
+            struct_name,
+            root_name,
+            &root.vis,
+            types,
+            ids,
+            read_calls,
+            write_calls,
+        )
     }
 }

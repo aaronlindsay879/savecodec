@@ -16,8 +16,13 @@ By defining a struct as follows:
 #[format_source("example.format")]
 struct Example;
 ``` 
-It will generate the following implementation block (the context can be ignored in this situation, as it is used to support conditional statements for composite types):
+It will generate the following type and implementation block (the context can be ignored in this situation, as it is used to support conditional statements for composite types):
 ```rust
+struct Example {
+    pub a: u16,
+    pub b: u64,
+}
+
 impl Example {
     pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
         let a = reader.read_u16::<::byteorder::LittleEndian>().ok()?;
@@ -45,7 +50,7 @@ While this is a simple example, the crate supports more features (which can all 
 * Floats (f32 and f64)
 
 ##### Composite, user defined types
-You can define your own types with creating a "types" entry in the config file as follows:
+You can define your own types with creating a `types` entry in the config file as follows:
 ```yaml
 types:
   upgrade:
