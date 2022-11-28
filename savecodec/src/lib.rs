@@ -1,6 +1,7 @@
 #![feature(const_for)]
 #![allow(overflowing_literals)]
 
+use binformat::format_source;
 use flate2::{
     read::{ZlibDecoder, ZlibEncoder},
     Compression,
@@ -86,4 +87,25 @@ pub fn encode_from_raw(data: &[u8], version: u16) -> Result<String, SaveError> {
 
     // and finally put in format save expects
     Ok(format!("${version:02}s{data}$e"))
+}
+
+#[format_source("save.format")]
+pub struct Save;
+
+impl Save {
+    pub fn parse_str(save: &str) -> Option<Self> {
+        let raw = decode_to_raw(save).ok()?;
+
+        Save::read(&mut raw.as_slice())
+    }
+
+    pub fn to_str(&self) -> Option<String> {
+        let mut raw = Vec::new();
+        self.write(&mut raw)?;
+
+        let checksum = crc32fast::hash(&raw).to_be_bytes();
+        raw.extend_from_slice(&checksum);
+
+        encode_from_raw(&raw, self.save_version).ok()
+    }
 }

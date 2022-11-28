@@ -18,13 +18,13 @@ const RUST_TYPES: &[&str] = &[
 ];
 
 /// Generate the entire chunk of code to be inserted
-pub(super) fn generate(struct_name: syn::Ident, format: Format) -> proc_macro::TokenStream {
+pub(super) fn generate(item: syn::ItemStruct, format: Format) -> proc_macro::TokenStream {
     let types = format
         .types
         .iter()
-        .map(|items| generate_struct(&struct_name, items.0, format.endianness, items.1));
+        .map(|items| generate_struct(&item, items.0, format.endianness, items.1));
 
-    let main = generate_struct(&struct_name, &struct_name, format.endianness, &format.items);
+    let main = generate_struct(&item, &item.ident, format.endianness, &format.items);
 
     quote! {
         #(#types)*

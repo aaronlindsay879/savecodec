@@ -6,12 +6,15 @@ use quote::{format_ident, quote, ToTokens};
 
 /// Generates the root struct and assosciated context
 fn generate_root_struct(
-    struct_name: &syn::Ident,
+    root: &syn::ItemStruct,
     types: Vec<proc_macro2::TokenStream>,
     ids: Vec<proc_macro2::TokenStream>,
     read_calls: Vec<proc_macro2::TokenStream>,
     write_calls: Vec<proc_macro2::TokenStream>,
 ) -> proc_macro2::TokenStream {
+    let struct_name = &root.ident;
+    let visibility = &root.vis;
+
     // if is root, construct a struct context with all simple types before first complex type
     let context_name = format_ident!("{}Context", struct_name);
 
@@ -35,7 +38,7 @@ fn generate_root_struct(
         }
 
         #[derive(Debug, PartialEq)]
-        struct #struct_name {
+        #visibility struct #struct_name {
             #(#ids: #types),*
         }
 
@@ -110,11 +113,13 @@ fn generate_composite_struct(
 
 /// Generate a struct with given information with read implementation, correctly handling the root case.
 pub(super) fn generate_struct(
-    root_name: &syn::Ident,
+    root: &syn::ItemStruct,
     struct_name: &syn::Ident,
     endianness: Endianness,
     items: &[Item],
 ) -> proc_macro2::TokenStream {
+    let root_name = &root.ident;
+
     // extract a list of types and ids from the item slice
     // needs to be two arrays because of how quote handles iterating
     let types: Vec<_> = items
@@ -144,7 +149,7 @@ pub(super) fn generate_struct(
 
     // simple check for root struct
     if struct_name == root_name {
-        generate_root_struct(struct_name, types, ids, read_calls, write_calls)
+        generate_root_struct(root, types, ids, read_calls, write_calls)
     } else {
         generate_composite_struct(struct_name, root_name, types, ids, read_calls, write_calls)
     }

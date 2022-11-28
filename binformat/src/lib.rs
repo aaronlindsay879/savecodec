@@ -53,8 +53,6 @@ pub fn format_source(attr: TokenStream, item: TokenStream) -> TokenStream {
         )
     };
 
-    let struct_name = item.ident;
-
     let file_contents = std::fs::read_to_string(path)
         .unwrap_or_else(|_| abort!(item.attrs.first(), "Path provided is not a valid file."));
     let file: BTreeMap<String, Value> = serde_yaml::from_str(&file_contents)
@@ -63,5 +61,5 @@ pub fn format_source(attr: TokenStream, item: TokenStream) -> TokenStream {
     let format = parse_file(file)
         .unwrap_or_else(|| abort!(item.attrs.first(), "File provided is not a valid format."));
 
-    generation::generate(struct_name, format)
+    generation::generate(item, format)
 }
