@@ -28,13 +28,13 @@ fn generate_repeated_statement(
     match repetition {
         Repetition::Count(expr) => match method {
             Method::Reading => quote! {
-                (0..#expr).map(|_| #statement).collect::<Option<Vec<_>>>()
+                (0..#expr).map(|_| #statement).collect::<::std::io::Result<Vec<_>>>()
             },
             Method::Writing => quote! {
                 self.#id
                     .iter()
                     .map(|#id| #statement)
-                    .collect::<Option<Vec<_>>>()
+                    .collect::<::std::io::Result<Vec<_>>>()
             },
         },
     }

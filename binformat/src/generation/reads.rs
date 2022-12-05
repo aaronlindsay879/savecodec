@@ -21,16 +21,16 @@ fn handle_simple_read(data_type: &syn::Type, endianness: Endianness) -> proc_mac
 
         match endianness {
             Endianness::Little => {
-                quote! {  reader.#fn_call::<::byteorder::LittleEndian>().ok() }
+                quote! {  reader.#fn_call::<::byteorder::LittleEndian>() }
             }
             Endianness::Big => {
-                quote! { reader.#fn_call::<::byteorder::BigEndian>().ok() }
+                quote! { reader.#fn_call::<::byteorder::BigEndian>() }
             }
         }
     } else if data_type.to_token_stream().to_string() == "bool" {
         // matches boolean logic in original savecodec2
 
-        quote! { reader.read_u8().map(|i| i != 0).ok() }
+        quote! { reader.read_u8().map(|i| i != 0) }
     } else {
         // more complex case where needs to use custom implementation
         // pass root context for conditional support
@@ -49,19 +49,19 @@ pub(super) fn generate_conditional_read(
     // make sure to advance pointer if needed
     let else_body = if condition.advance_if_false {
         quote! {
-            reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()]).ok()?;
-            Some(None)
+            reader.read_exact(&mut [0u8; std::mem::size_of::<#data_type>()])?;
+            None
         }
     } else {
         quote! {
-            Some(None)
+            None
         }
     };
 
     let expr = &condition.expression;
     quote! {
         if #expr {
-            Some(#statement)
+            Some(#statement?)
         } else {
             #else_body
         }
@@ -97,7 +97,12 @@ pub(super) fn generate_read_calls(
                 let read = handle_simple_read(data_type, endianness);
                 let read = create_statement(read, id, data_type, condition, repetition, Method::Reading);
 
-                quote! { let #id = #read? }
+                // conditional code has custom error handling, otherwise just standard error propagation
+                if condition.is_some() {
+                    quote! { let #id = #read }
+                } else {
+                    quote! { let #id = #read? }
+                }
             } else {
                 abort!(struct_name, "can only handle simple types (try removing any Options or Results in config file)")
             }

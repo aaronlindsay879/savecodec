@@ -7,5 +7,6 @@ fn main() {
     let new_str = save_decoded.to_str().unwrap();
     let new_decoded = Save::parse_str(&new_str).unwrap();
 
+    println!("{save_decoded:?}");
     println!("{}", save_decoded == new_decoded);
 }

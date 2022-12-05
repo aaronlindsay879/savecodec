@@ -43,7 +43,7 @@ fn generate_root_struct(
         }
 
         impl #struct_name {
-            pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
+            pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> ::std::io::Result<Self> {
                 #(
                     #initial_read_calls;
                 )*
@@ -56,17 +56,17 @@ fn generate_root_struct(
                     #rest_read_calls;
                 )*
 
-                Some(Self {
+                Ok(Self {
                     #(#ids),*
                 })
             }
 
-            pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> Option<()> {
+            pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> ::std::io::Result<()> {
                 #(
                     #write_calls;
                 )*
 
-                Some(())
+                Ok(())
             }
         }
     }
@@ -91,22 +91,22 @@ fn generate_composite_struct(
         }
 
         impl #struct_name {
-            pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R, _root: &#context_name) -> Option<Self> {
+            pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R, _root: &#context_name) -> ::std::io::Result<Self> {
                 #(
                     #read_calls;
                 )*
 
-                Some(Self {
+                Ok(Self {
                     #(#ids),*
                 })
             }
 
-            pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> Option<()> {
+            pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> ::std::io::Result<()> {
                 #(
                     #write_calls;
                 )*
 
-                Some(())
+                Ok(())
             }
         }
     }

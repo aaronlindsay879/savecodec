@@ -19,6 +19,8 @@ pub enum SaveError {
     InvalidBase64,
     #[error("save data compression error")]
     CompressError(#[from] std::io::Error),
+    #[error("binary read/write error")]
+    RWError(std::io::Error),
 }
 
 /// Key for the vigenere cipher
@@ -93,19 +95,19 @@ pub fn encode_from_raw(data: &[u8], version: u16) -> Result<String, SaveError> {
 pub struct Save;
 
 impl Save {
-    pub fn parse_str(save: &str) -> Option<Self> {
-        let raw = decode_to_raw(save).ok()?;
+    pub fn parse_str(save: &str) -> Result<Self, SaveError> {
+        let raw = decode_to_raw(save)?;
 
-        Save::read(&mut raw.as_slice())
+        Save::read(&mut raw.as_slice()).map_err(SaveError::RWError)
     }
 
-    pub fn to_str(&self) -> Option<String> {
+    pub fn to_str(&self) -> Result<String, SaveError> {
         let mut raw = Vec::new();
         self.write(&mut raw)?;
 
         let checksum = crc32fast::hash(&raw).to_be_bytes();
         raw.extend_from_slice(&checksum);
 
-        encode_from_raw(&raw, self.save_version).ok()
+        encode_from_raw(&raw, self.save_version)
     }
 }

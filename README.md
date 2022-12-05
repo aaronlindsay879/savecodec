@@ -24,16 +24,21 @@ struct Example {
 }
 
 impl Example {
-    pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
-        let a = reader.read_u16::<::byteorder::LittleEndian>().ok()?;
-        let b = reader.read_u64::<::byteorder::LittleEndian>().ok()?;
+    pub fn read<R: ::byteorder::ReadBytesExt>(
+        reader: &mut R,
+    ) -> ::std::io::Result<Self> {
+        let a = reader.read_u16::<::byteorder::LittleEndian>()?;
+        let b = reader.read_u64::<::byteorder::LittleEndian>()?;
         let _root = ExampleContext { a, b };
-        Some(Self { a, b })
+        Ok(Self { a, b })
     }
-    pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> Option<()> {
-        writer.write_u16::<::byteorder::LittleEndian>(self.a).ok()?;
-        writer.write_u64::<::byteorder::LittleEndian>(self.b).ok()?;
-        Some(())
+    pub fn write<W: ::byteorder::WriteBytesExt>(
+        &self,
+        writer: &mut W,
+    ) -> ::std::io::Result<()> {
+        writer.write_u16::<::byteorder::LittleEndian>(self.a)?;
+        writer.write_u64::<::byteorder::LittleEndian>(self.b)?;
+        Ok(())
     }
 }
 ```
@@ -75,16 +80,21 @@ items:
 ```
 This will generate code that simply reads/writes two upgrades (where the upgrade read/writers work as shown in the first example), as follows:
 ```rust
-pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
+pub fn read<R: ::byteorder::ReadBytesExt>(
+    reader: &mut R,
+) -> ::std::io::Result<Self> {
     let _root = ExampleContext {};
     let a = upgrade::read(reader, &_root)?;
     let b = upgrade::read(reader, &_root)?;
-    Some(Self { a, b })
+    Ok(Self { a, b })
 }
-pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> Option<()> {
+pub fn write<W: ::byteorder::WriteBytesExt>(
+    &self,
+    writer: &mut W,
+) -> ::std::io::Result<()> {
     self.a.write(writer)?;
     self.b.write(writer)?;
-    Some(())
+    Ok(())
 }
 ```
 
@@ -100,24 +110,27 @@ items:
 ```
 This will generate code that only reads the value if save_version is above 1, and only writes if it exists in the data you're parsing:
 ```rust
-pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
-    let save_version = reader.read_u64::<::byteorder::LittleEndian>().ok()?;
+pub fn read<R: ::byteorder::ReadBytesExt>(
+    reader: &mut R,
+) -> ::std::io::Result<Self> {
+    let save_version = reader.read_u64::<::byteorder::LittleEndian>()?;
     let _root = ExampleContext { save_version };
     let item = if save_version > 1 {
-        Some(reader.read_u64::<::byteorder::LittleEndian>().ok())
+        Some(reader.read_u64::<::byteorder::LittleEndian>()?)
     } else {
-        Some(None)
-    }?;
-    Some(Self { save_version, item })
+        None
+    };
+    Ok(Self { save_version, item })
 }
-pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> Option<()> {
-    writer.write_u64::<::byteorder::LittleEndian>(self.save_version).ok()?;
+pub fn write<W: ::byteorder::WriteBytesExt>(
+    &self,
+    writer: &mut W,
+) -> ::std::io::Result<()> {
+    writer.write_u64::<::byteorder::LittleEndian>(self.save_version)?;
     if let Some(item) = self.item {
-        writer.write_u64::<::byteorder::LittleEndian>(item).ok()
-    } else {
-        Some(())
-    }?;
-    Some(())
+        writer.write_u64::<::byteorder::LittleEndian>(item)?
+    }
+    Ok(())
 }
 ```
 This is where the `_root` context variable comes in handy - if you were to then try and parse a composite type, it would be passed to that type such that it could also be conditional on values in the parent type (such as `_root.save_version > 1`)
@@ -134,21 +147,26 @@ items:
 ```
 This first reads a number, and then reads however many values that specified - which is shown in the generated code:
 ```rust
-pub fn read<R: ::byteorder::ReadBytesExt>(reader: &mut R) -> Option<Self> {
-    let number = reader.read_u64::<::byteorder::LittleEndian>().ok()?;
+pub fn read<R: ::byteorder::ReadBytesExt>(
+    reader: &mut R,
+) -> ::std::io::Result<Self> {
+    let number = reader.read_u64::<::byteorder::LittleEndian>()?;
     let _root = ExampleContext { number };
     let values = (0..number)
-        .map(|_| reader.read_u64::<::byteorder::LittleEndian>().ok())
-        .collect::<Option<Vec<_>>>()?;
-    Some(Self { number, values })
+        .map(|_| reader.read_u64::<::byteorder::LittleEndian>())
+        .collect::<::std::io::Result<Vec<_>>>()?;
+    Ok(Self { number, values })
 }
-pub fn write<W: ::byteorder::WriteBytesExt>(&self, writer: &mut W) -> Option<()> {
-    writer.write_u64::<::byteorder::LittleEndian>(self.number).ok()?;
+pub fn write<W: ::byteorder::WriteBytesExt>(
+    &self,
+    writer: &mut W,
+) -> ::std::io::Result<()> {
+    writer.write_u64::<::byteorder::LittleEndian>(self.number)?;
     self.values
         .iter()
-        .map(|values| writer.write_u64::<::byteorder::LittleEndian>(values).ok())
-        .collect::<Option<Vec<_>>>()?;
-    Some(())
+        .map(|values| writer.write_u64::<::byteorder::LittleEndian>(values))
+        .collect::<::std::io::Result<Vec<_>>>()?;
+    Ok(())
 }
 ```
 ## savecodec

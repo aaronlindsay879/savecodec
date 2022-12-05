@@ -24,16 +24,16 @@ fn handle_simple_write(
 
         match endianness {
             Endianness::Little => {
-                quote! {  writer.#fn_call::<::byteorder::LittleEndian>(#id).ok() }
+                quote! {  writer.#fn_call::<::byteorder::LittleEndian>(#id) }
             }
             Endianness::Big => {
-                quote! { writer.#fn_call::<::byteorder::BigEndian>(#id).ok() }
+                quote! { writer.#fn_call::<::byteorder::BigEndian>(#id) }
             }
         }
     } else if data_type.to_token_stream().to_string() == "bool" {
         // matches boolean logic in original savecodec2
 
-        quote! { writer.write_u8(if #id { 1 } else { 0 }).ok() }
+        quote! { writer.write_u8(if #id { 1 } else { 0 }) }
     } else {
         quote! { #id.write(writer) }
     }
@@ -52,15 +52,13 @@ pub(super) fn generate_conditional_write(
             if let Some(#id) = self.#id {
                 #statement
             } else {
-                writer.write_all(&[0u8; std::mem::size_of::<#data_type>()]).ok()
-            }
+                writer.write_all(&[0u8; std::mem::size_of::<#data_type>()])
+            }?
         }
     } else {
         quote! {
             if let Some(#id) = self.#id {
-                #statement
-            } else {
-               Some(())
+                #statement?
             }
         }
     }
@@ -101,7 +99,12 @@ pub(super) fn generate_write_calls(
                 };
                 let write = create_statement(write, id, data_type, condition, repetition, Method::Writing);
 
-                quote! { #write? }
+                // conditional code has custom error handling, otherwise just standard error propagation
+                if condition.is_some() {
+                    quote! { #write }
+                } else {
+                    quote! { #write? }
+                }
             } else {
                 abort!(struct_name, "can only handle simple types (try removing any Options or Results in config file)")
             }
